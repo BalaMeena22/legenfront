@@ -54,8 +54,6 @@ const Dashboard = () => {
 
   const collegeMailId = localStorage.getItem('userCollegeId');
   const navigate = useNavigate();
-
-  // RSA Key Generation
   const generateRSAKeyPair = async () => {
     try {
       const keyPair = await window.crypto.subtle.generateKey(
