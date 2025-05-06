@@ -5,13 +5,14 @@ import { useNavigate } from 'react-router-dom';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import './custom.css';
 import jsPDF from 'jspdf';
-import { PDFDocument, rgb } from ' ';
+import { PDFDocument, rgb } from 'pdf-lib';
 import { Toaster, toast } from 'react-hot-toast';
 
 const Dashboard = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [view, setView] = useState('letterGenerator');
   const [profileDetails, setProfileDetails] = useState(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [tempProfileDetails, setTempProfileDetails] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -54,6 +55,59 @@ const Dashboard = () => {
 
   const collegeMailId = localStorage.getItem('userCollegeId');
   const navigate = useNavigate();
+  const apiUrl ='http://localhost:3008';
+
+  // Mock data for guest mode
+  const guestProfile = {
+    _id: 'guest_001',
+    name: 'Guest User',
+    email: 'guest@example.com',
+    collegeMailId: 'guest@college.edu',
+    professionRole: ['student'],
+    deptAndSection: 'CSE - A',
+    department: 'Computer Science',
+    isHosteller: 'yes',
+    hostelName: 'Guest Hostel',
+    rollNumber: 'GUEST001',
+  };
+
+  const guestRecipients = [
+    {
+      _id: 'recipient_001',
+      name: 'Dr. John Doe',
+      professionRole: ['hod'],
+    },
+    {
+      _id: 'recipient_002',
+      name: 'Prof. Jane Smith',
+      professionRole: ['professor'],
+    },
+  ];
+
+  const guestLetterHistory = [
+    {
+      _id: 'letter_001',
+      name: 'leave_letter_01-05-2025.pdf',
+      createdAt: new Date().toISOString(),
+      formData: { letterType: 'leave', startDate: '2025-05-01', endDate: '2025-05-03', reason: 'Personal' },
+      signatureData: null,
+    },
+  ];
+
+  const guestEmails = [
+    {
+      _id: 'email_001',
+      from: 'guest@college.edu',
+      to: 'recipient@college.edu',
+      subject: 'Sample Email',
+      message: 'This is a sample email for guest mode.',
+      sentAt: new Date().toISOString(),
+      pdfName: null,
+      pdfAttachment: null,
+    },
+  ];
+
+  // RSA Key Generation
   const generateRSAKeyPair = async () => {
     try {
       const keyPair = await window.crypto.subtle.generateKey(
@@ -123,8 +177,17 @@ const Dashboard = () => {
   };
 
   const fetchProfile = async () => {
+    if (isGuest) {
+      setProfileDetails(guestProfile);
+      setTempProfileDetails({ ...guestProfile });
+      setEmailForm((prev) => ({ ...prev, from: guestProfile.collegeMailId }));
+      localStorage.setItem('userId', guestProfile._id);
+      setLoadingProfile(false);
+      return;
+    }
+
     try {
-      const response = await axios.get(`http://localhost:3008/users/email/${collegeMailId}`);
+      const response = await axios.get(`${apiUrl}/users/email/${collegeMailId}`);
       setProfileDetails(response.data);
       setTempProfileDetails({ ...response.data });
       setEmailForm((prev) => ({ ...prev, from: response.data.collegeMailId }));
@@ -135,16 +198,26 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
-      setErrorProfile('Failed to load profile information.');
-      toast.error('Failed to load profile.');
+      // Fallback to guest mode
+      setIsGuest(true);
+      setProfileDetails(guestProfile);
+      setTempProfileDetails({ ...guestProfile });
+      setEmailForm((prev) => ({ ...prev, from: guestProfile.collegeMailId }));
+      localStorage.setItem('userId', guestProfile._id);
+      toast.warn('Profile fetch failed. Logged in as Guest.');
     } finally {
       setLoadingProfile(false);
     }
   };
 
   const fetchRecipients = async () => {
+    if (isGuest) {
+      setRecipients(guestRecipients);
+      return;
+    }
+
     try {
-      const response = await axios.get('http://localhost:3008/users', {
+      const response = await axios.get(`${apiUrl}/users`, {
         params: { excludeRole: profileDetails?.professionRole.includes('student') ? 'student' : '' },
       });
       setRecipients(response.data);
@@ -155,13 +228,18 @@ const Dashboard = () => {
   };
 
   const fetchLetterHistory = async () => {
+    if (isGuest) {
+      setLetterHistory(guestLetterHistory);
+      return;
+    }
+
     const userId = localStorage.getItem('userId');
     if (!userId) {
       toast.error('User ID not found.');
       return;
     }
     try {
-      const response = await axios.get(`http://localhost:3008/letters/${userId}`);
+      const response = await axios.get(`${apiUrl}/letters/${userId}`);
       setLetterHistory(response.data);
       console.log('Fetched Letter History:', response.data);
     } catch (error) {
@@ -171,6 +249,13 @@ const Dashboard = () => {
   };
 
   const fetchEmails = async () => {
+    if (isGuest) {
+      setEmails(guestEmails);
+      setEmailLoading(false);
+      toast.success('Guest emails loaded!');
+      return;
+    }
+
     const userId = localStorage.getItem('userId');
     if (!userId) {
       toast.error('User ID not found.');
@@ -179,7 +264,7 @@ const Dashboard = () => {
     }
     setEmailLoading(true);
     try {
-      const response = await axios.get(`http://localhost:3008/emails/${userId}`);
+      const response = await axios.get(`${apiUrl}/emails/${userId}`);
       setEmails(response.data);
       if (response.data.length > 0) {
         toast.success('Emails fetched!');
@@ -211,6 +296,10 @@ const Dashboard = () => {
   };
 
   const handleEditProfile = () => {
+    if (isGuest) {
+      toast.error('Profile editing is disabled in Guest mode.');
+      return;
+    }
     setIsEditingProfile(true);
     setTempProfileDetails({ ...profileDetails });
     setView('profileEdit');
@@ -225,6 +314,11 @@ const Dashboard = () => {
   };
 
   const handleSaveProfile = async () => {
+    if (isGuest) {
+      toast.error('Profile saving is disabled in Guest mode.');
+      return;
+    }
+
     try {
       const userId = localStorage.getItem('userId');
       if (!userId) {
@@ -232,7 +326,7 @@ const Dashboard = () => {
         toast.error('User ID not found.');
         return;
       }
-      const response = await axios.put(`http://localhost:3008/users/${userId}`, tempProfileDetails);
+      const response = await axios.put(`${apiUrl}/users/${userId}`, tempProfileDetails);
       setProfileDetails(response.data);
       setTempProfileDetails(response.data);
       setEmailForm((prev) => ({ ...prev, from: response.data.collegeMailId }));
@@ -269,6 +363,11 @@ const Dashboard = () => {
   };
 
   const handleSendEmail = async () => {
+    if (isGuest) {
+      toast.error('Email sending is disabled in Guest mode.');
+      return;
+    }
+
     if (!emailForm.to || !emailForm.subject || !emailForm.message) {
       setEmailError('All fields are required.');
       toast.error('All fields are required.');
@@ -328,7 +427,7 @@ const Dashboard = () => {
     }
 
     try {
-      const response = await axios.post('http://localhost:3008/send-email', formData, {
+      const response = await axios.post(`${apiUrl}/send-email`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       toast.success('Email saved successfully!');
@@ -618,11 +717,11 @@ const Dashboard = () => {
 
     doc.save(filename);
 
-    if (!data.fromHistory && !isEdited) {
+    if (!data.fromHistory && !isEdited && !isGuest) {
       const userId = localStorage.getItem('userId');
       try {
         console.log('Saving letter to backend:', { userId, name: filename, formData: data });
-        const response = await axios.post('http://localhost:3008/letters', {
+        const response = await axios.post(`${apiUrl}/letters`, {
           userId,
           name: filename,
           createdAt: new Date().toISOString(),
@@ -637,11 +736,11 @@ const Dashboard = () => {
         toast.error('Failed to save letter to backend.');
       }
       setDigitalSignature(null);
-    } else if (isEdited) {
+    } else if (isEdited && !isGuest) {
       const userId = localStorage.getItem('userId');
       try {
         console.log('Saving edited letter to backend:', { userId, name: filename, formData: data });
-        const response = await axios.post('http://localhost:3008/letters', {
+        const response = await axios.post(`${apiUrl}/letters`, {
           userId,
           name: filename,
           createdAt: new Date().toISOString(),
@@ -656,6 +755,8 @@ const Dashboard = () => {
         toast.error('Failed to save edited letter to backend.');
       }
       setDigitalSignature(null);
+    } else if (isGuest) {
+      toast.success('Letter generated locally (Guest mode).');
     }
   };
 
@@ -684,8 +785,19 @@ const Dashboard = () => {
   };
 
   const handleDownloadLetter = async (letterId) => {
+    if (isGuest) {
+      const letter = guestLetterHistory.find((l) => l._id === letterId);
+      if (letter) {
+        generatePDF({ ...letter.formData, fromHistory: true }, letter.signatureData);
+        toast.success('Letter downloaded (Guest mode).');
+      } else {
+        toast.error('Letter not found.');
+      }
+      return;
+    }
+
     try {
-      const response = await axios.get(`http://localhost:3008/letters/download/${letterId}`);
+      const response = await axios.get(`${apiUrl}/letters/download/${letterId}`);
       const letter = response.data;
       if (letter.formData.editedContent) {
         generatePDF(
@@ -719,9 +831,14 @@ const Dashboard = () => {
     if (collegeMailId) {
       fetchProfile();
     } else {
-      setErrorProfile('College Mail ID not found in local storage.');
+      // Fallback to guest mode if no collegeMailId
+      setIsGuest(true);
+      setProfileDetails(guestProfile);
+      setTempProfileDetails({ ...guestProfile });
+      setEmailForm((prev) => ({ ...prev, from: guestProfile.collegeMailId }));
+      localStorage.setItem('userId', guestProfile._id);
       setLoadingProfile(false);
-      toast.error('College Mail ID not found.');
+      toast.warn('No College Mail ID found. Logged in as Guest.');
     }
   }, [collegeMailId]);
 
@@ -770,7 +887,9 @@ const Dashboard = () => {
       <div className="hero-head">
         <nav className="navbar" style={{ backgroundColor: '#002f6c', padding: '1rem' }}>
           <div className="navbar-brand">
-            <div className="navbar-item title is-2 has-text-white">LeGen</div>
+            <div className="navbar-item title is-2 has-text-white">
+              LeGen {isGuest && <span className="has-text-warning">(Guest Mode)</span>}
+            </div>
           </div>
           <div className="navbar-menu">
             <div className="navbar-start">
@@ -828,6 +947,11 @@ const Dashboard = () => {
           {!isStaff && view === 'letterGenerator' && !isEditingLetter && (
             <div className="box has-background-white-ter">
               <h2 className="title is-2">Letter Generator</h2>
+              {isGuest && (
+                <div className="notification is-warning">
+                  Guest Mode: Letters can be generated and downloaded locally but cannot be saved to the backend.
+                </div>
+              )}
               <div className="columns">
                 <div className="column is-full">
                   <div className="field">
@@ -1119,7 +1243,12 @@ const Dashboard = () => {
                       <button className="button is-primary" onClick={handleGenerateAndEdit} style={{ marginRight: '1rem' }}>
                         Generate & Edit
                       </button>
-                      <button className="button is-success" onClick={() => generatePDF(formData)}>
+                      <button
+                        className="button is-success"
+                        onClick={() => generatePDF(formData)}
+                        disabled={isGuest}
+                        title={isGuest ? 'Disabled in Guest mode' : ''}
+                      >
                         Generate & Download PDF
                       </button>
                     </div>
@@ -1146,7 +1275,12 @@ const Dashboard = () => {
               </div>
               <div className="field is-grouped">
                 <div className="control">
-                  <button className="button is-primary" onClick={handleSaveEditedLetter}>
+                  <button
+                    className="button is-primary"
+                    onClick={handleSaveEditedLetter}
+                    disabled={isGuest}
+                    title={isGuest ? 'Disabled in Guest mode' : ''}
+                  >
                     Save Changes & Download
                   </button>
                 </div>
@@ -1162,6 +1296,11 @@ const Dashboard = () => {
           {view === 'yourLetters' && (
             <div className="box has-background-white-ter">
               <h2 className="title is-2">Your Letters</h2>
+              {isGuest && (
+                <div className="notification is-warning">
+                  Guest Mode: Displaying sample letters. Saving is disabled.
+                </div>
+              )}
               {letterHistory.length > 0 ? (
                 <table className="table is-fullwidth is-striped">
                   <thead>
@@ -1201,6 +1340,11 @@ const Dashboard = () => {
           {view === 'gmail' && (
             <div className="box has-background-white-ter">
               <h2 className="title is-2">Gmail</h2>
+              {isGuest && (
+                <div className="notification is-warning">
+                  Guest Mode: Displaying sample emails. Sending emails is disabled.
+                </div>
+              )}
               {emailError && <div className="notification is-danger">{emailError}</div>}
               <div className="columns">
                 <div className="column is-4">
@@ -1271,7 +1415,8 @@ const Dashboard = () => {
                       <button
                         className={`button is-primary ${emailLoading ? 'is-loading' : ''}`}
                         onClick={handleSendEmail}
-                        disabled={emailLoading}
+                        disabled={emailLoading || isGuest}
+                        title={isGuest ? 'Disabled in Guest mode' : ''}
                       >
                         Send
                       </button>
@@ -1364,7 +1509,12 @@ const Dashboard = () => {
                   />
                   <div className="field is-grouped" style={{ marginTop: '1rem' }}>
                     <div className="control">
-                      <button className="button is-primary" onClick={saveSignature}>
+                      <button
+                        className="button is-primary"
+                        onClick={saveSignature}
+                        disabled={isGuest}
+                        title={isGuest ? 'Disabled in Guest mode' : ''}
+                      >
                         Save Signature
                       </button>
                     </div>
@@ -1387,6 +1537,11 @@ const Dashboard = () => {
           {(view === 'profileView' || view === 'profileEdit') && (
             <div className="box has-background-white-ter">
               <h2 className="title is-2">{view === 'profileView' ? 'Profile Details' : 'Modify Profile'}</h2>
+              {isGuest && view === 'profileEdit' && (
+                <div className="notification is-warning">
+                  Guest Mode: Profile editing is disabled.
+                </div>
+              )}
               {view === 'profileEdit' ? (
                 <form onSubmit={(e) => { e.preventDefault(); handleSaveProfile(); }}>
                   <div className="field">
@@ -1399,6 +1554,7 @@ const Dashboard = () => {
                         value={tempProfileDetails?.name || ''}
                         onChange={handleProfileInputChange}
                         required
+                        disabled={isGuest}
                       />
                     </div>
                   </div>
@@ -1412,6 +1568,7 @@ const Dashboard = () => {
                         value={tempProfileDetails?.email || ''}
                         onChange={handleProfileInputChange}
                         required
+                        disabled={isGuest}
                       />
                     </div>
                   </div>
@@ -1441,6 +1598,7 @@ const Dashboard = () => {
                             value={role || ''}
                             onChange={handleProfileInputChange}
                             style={{ marginBottom: '0.5rem' }}
+                            disabled={isGuest}
                           />
                         ))}
                     </div>
@@ -1454,6 +1612,7 @@ const Dashboard = () => {
                         name="deptAndSection"
                         value={tempProfileDetails?.deptAndSection || ''}
                         onChange={handleProfileInputChange}
+                        disabled={isGuest}
                       />
                     </div>
                   </div>
@@ -1466,6 +1625,7 @@ const Dashboard = () => {
                         name="department"
                         value={tempProfileDetails?.department || ''}
                         onChange={handleProfileInputChange}
+                        disabled={isGuest}
                       />
                     </div>
                   </div>
@@ -1477,6 +1637,7 @@ const Dashboard = () => {
                           name="isHosteller"
                           value={tempProfileDetails?.isHosteller || ''}
                           onChange={handleProfileInputChange}
+                          disabled={isGuest}
                         >
                           <option value="">Select</option>
                           <option value="yes">Yes</option>
@@ -1495,6 +1656,7 @@ const Dashboard = () => {
                           name="hostelName"
                           value={tempProfileDetails?.hostelName || ''}
                           onChange={handleProfileInputChange}
+                          disabled={isGuest}
                         />
                       </div>
                     </div>
@@ -1508,12 +1670,18 @@ const Dashboard = () => {
                         name="rollNumber"
                         value={tempProfileDetails?.rollNumber || ''}
                         onChange={handleProfileInputChange}
+                        disabled={isGuest}
                       />
                     </div>
                   </div>
                   <div className="field">
                     <div className="control">
-                      <button type="submit" className="button is-primary">
+                      <button
+                        type="submit"
+                        className="button is-primary"
+                        disabled={isGuest}
+                        title={isGuest ? 'Disabled in Guest mode' : ''}
+                      >
                         Save Changes
                       </button>
                       <button
@@ -1543,7 +1711,13 @@ const Dashboard = () => {
                     <p><strong>Hostel Name:</strong> {profileDetails?.hostelName}</p>
                   )}
                   <p><strong>Roll Number:</strong> {profileDetails?.rollNumber}</p>
-                  <button className="button is-info" onClick={() => handleEditProfile()} style={{ marginTop: '1rem' }}>
+                  <button
+                    className="button is-info"
+                    onClick={() => handleEditProfile()}
+                    style={{ marginTop: '1rem' }}
+                    disabled={isGuest}
+                    title={isGuest ? 'Disabled in Guest mode' : ''}
+                  >
                     Edit Profile
                   </button>
                 </div>
