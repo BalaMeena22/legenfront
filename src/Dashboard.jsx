@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import './custom.css';
 import jsPDF from 'jspdf';
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, rgb } from ' ';
 import { Toaster, toast } from 'react-hot-toast';
 
 const Dashboard = () => {
